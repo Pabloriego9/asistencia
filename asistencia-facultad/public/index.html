@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de Asistencia</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="card">
+        <h2>Registro de Asistencia</h2>
+        <form id="attendanceForm">
+            <div class="input-group">
+                <label for="nombre">Nombre</label>
+                <input type="text" id="nombre" required placeholder="Ej. Juan">
+            </div>
+            
+            <div class="input-group">
+                <label for="apellido">Apellido</label>
+                <input type="text" id="apellido" required placeholder="Ej. Pérez">
+            </div>
+
+            <div class="input-group">
+                <label for="dni">DNI</label>
+                <input type="number" id="dni" required placeholder="Ej. 12345678">
+            </div>
+
+            <button type="submit">Marcar Presente</button>
+        </form>
+            <div id="mensaje" class="mensaje"></div>
+
+            <div class="export-group">
+                <label><input type="checkbox" id="soloHoy"> Solo la asistencia de hoy</label>
+                
+                <button id="exportExcelBtn" class="btn">Exportar a Excel (.xlsx)</button>
+            </div>
+    </div>
+
+        <!-- SheetJS (XLSX) CDN para generar Excel en cliente -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+        <script src="script.js"></script>
+</body>
+</html>
