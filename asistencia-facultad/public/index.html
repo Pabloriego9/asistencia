@@ -1,14 +1,18 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <!-- Metadatos básicos para codificación, adaptación móvil y título de la pestaña. -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Registro de Asistencia</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Contenedor principal de la pantalla de registro. -->
     <div class="card">
         <h2>Registro de Asistencia</h2>
+
+        <!-- Formulario que recoge los datos mínimos de la persona. -->
         <form id="attendanceForm">
             <div class="input-group">
                 <label for="nombre">Nombre</label>
@@ -25,10 +29,14 @@
                 <input type="number" id="dni" required placeholder="Ej. 12345678">
             </div>
 
+            <!-- Al enviarse, script.js intercepta el formulario y llama a la API. -->
             <button type="submit">Marcar Presente</button>
         </form>
+
+            <!-- Aquí se muestran los mensajes de éxito o error del registro. -->
             <div id="mensaje" class="mensaje"></div>
 
+            <!-- Controles para descargar todas las asistencias o solo las de hoy. -->
             <div class="export-group">
                 <label><input type="checkbox" id="soloHoy"> Solo la asistencia de hoy</label>
                 
@@ -36,8 +44,9 @@
             </div>
     </div>
 
-        <!-- SheetJS (XLSX) CDN para generar Excel en cliente -->
+        <!-- SheetJS genera el archivo Excel directamente en el navegador. -->
         <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+        <!-- Lógica de envío del formulario y exportación de asistencias. -->
         <script src="script.js"></script>
 </body>
 </html>

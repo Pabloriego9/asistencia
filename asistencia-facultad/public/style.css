@@ -1,3 +1,4 @@
+/* Hace que el ancho y el alto incluyan el relleno y elimina espacios iniciales. */
 * {
     box-sizing: border-box;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -5,6 +6,7 @@
     padding: 0;
 }
 
+/* Centra la tarjeta en la pantalla y establece un fondo claro para la aplicación. */
 body {
     background-color: #f4f6f9;
     display: flex;
@@ -14,6 +16,7 @@ body {
     padding: 20px;
 }
 
+/* Panel que agrupa el formulario y las opciones de exportación. */
 .card {
     background: #ffffff;
     border-radius: 12px;
@@ -23,16 +26,19 @@ body {
     max-width: 400px;
 }
 
+/* Título principal de la pantalla. */
 h2 {
     margin-bottom: 20px;
     color: #333;
     text-align: center;
 }
 
+/* Separa verticalmente cada etiqueta con su campo de entrada. */
 .input-group {
     margin-bottom: 15px;
 }
 
+/* Da formato uniforme a las etiquetas de los campos. */
 label {
     display: block;
     margin-bottom: 5px;
@@ -40,6 +46,7 @@ label {
     font-weight: 600;
 }
 
+/* Campos de nombre, apellido y DNI. */
 input {
     width: 100%;
     padding: 12px;
@@ -48,6 +55,7 @@ input {
     font-size: 16px;
 }
 
+/* Estilo base de los botones de la aplicación. */
 button {
     width: 100%;
     padding: 12px;
@@ -61,10 +69,12 @@ button {
     transition: background 0.3s;
 }
 
+/* Cambia el color del botón cuando el cursor pasa por encima. */
 button:hover {
     background-color: #004999;
 }
 
+/* El mensaje permanece oculto hasta que JavaScript le asigna una clase de estado. */
 .mensaje {
     margin-top: 15px;
     padding: 10px;
@@ -73,22 +83,26 @@ button:hover {
     display: none;
 }
 
+/* Estado visual para una operación correcta. */
 .exito {
     background-color: #d4edda;
     color: #155724;
     display: block;
 }
 
+/* Estado visual para una operación fallida. */
 .error {
     background-color: #f8d7da;
     color: #721c24;
     display: block;
 }
 
+/* Espaciado de la zona de exportación. */
 .export-group {
     margin-top: 12px;
 }
 
+/* Alinea el checkbox y su texto en una sola fila. */
 .export-group label {
     display: flex;
     align-items: center;
@@ -96,6 +110,7 @@ button:hover {
     margin-bottom: 10px;
 }
 
+/* Evita que el checkbox ocupe todo el ancho como los demás inputs. */
 .export-group input[type="checkbox"] {
     width: auto;
     margin: 0;
