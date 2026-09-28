@@ -79,7 +79,8 @@ function isRowToday(row) {
 
 // Convierte las filas recibidas en una hoja de cálculo y la descarga como XLSX.
 async function exportExcel(rows, filename = 'asistencias.xlsx') {
-    const ws = XLSX.utils.json_to_sheet(rows);
+    const rowsForExport = rows.map(({ fecha_hora, ...row }) => row);
+    const ws = XLSX.utils.json_to_sheet(rowsForExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Asistencias');
     XLSX.writeFile(wb, filename);

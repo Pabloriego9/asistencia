@@ -11,6 +11,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
+const argentinaDateTimeFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+});
+
+function getArgentinaDateTime() {
+    const parts = Object.fromEntries(
+        argentinaDateTimeFormatter.formatToParts(new Date()).map(({ type, value }) => [type, value])
+    );
+
+    return {
+        fecha: `${parts.year}-${parts.month}-${parts.day}`,
+        hora: `${parts.hour}:${parts.minute}:${parts.second}`
+    };
+}
 
 // Cliente de conexión a la base de datos Turso. Las credenciales se leen desde
 // las variables de entorno para no escribirlas directamente en el código.
@@ -82,28 +103,19 @@ app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
             return res.status(400).json({ error: 'Todos los campos son obligatorios.' });
         }
 
-        // Si el cliente no envía fecha u hora, se generan usando el reloj local
-        // del servidor y se formatean como YYYY-MM-DD y HH:mm:ss.
-        const ahora = new Date();
-        const fecha = fechaRecibida || [
-            ahora.getFullYear(),
-            String(ahora.getMonth() + 1).padStart(2, '0'),
-            String(ahora.getDate()).padStart(2, '0')
-        ].join('-');
-        const hora = horaRecibida || [
-            String(ahora.getHours()).padStart(2, '0'),
-            String(ahora.getMinutes()).padStart(2, '0'),
-            String(ahora.getSeconds()).padStart(2, '0')
-        ].join(':');
+        // Se usa la zona horaria de Argentina, independientemente del servidor.
+        const fechaHoraArgentina = getArgentinaDateTime();
+        const fecha = fechaRecibida || fechaHoraArgentina.fecha;
+        const hora = horaRecibida || fechaHoraArgentina.hora;
 
         // Los signos ? y args separan los valores de la consulta SQL y ayudan
         // a evitar inyecciones SQL.
         const result = await db.execute({
             sql: `
-                INSERT INTO asistencias (nombre, apellido, dni, fecha, hora)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO asistencias (nombre, apellido, dni, fecha_hora, fecha, hora)
+                VALUES (?, ?, ?, ?, ?, ?)
             `,
-            args: [nombre, apellido, dni, fecha, hora]
+            args: [nombre, apellido, dni, `${fecha} ${hora}`, fecha, hora]
         });
 
         res.json({

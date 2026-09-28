@@ -37,9 +37,6 @@ Exportar asistencias
 	- `Exportar a Excel (.xlsx)`: descarga un archivo `.xlsx` generado en el cliente.
 	
 
-Notas sobre Google Sheets:
-- La aplicación no usa la API de Google (requiere OAuth). El flujo actual copia el CSV al portapapeles y abre una nueva hoja para que pegues los datos manualmente.
-
 Restricción de un registro por día
 - Ahora la aplicación evita que un mismo `DNI` registre asistencia más de una vez en el mismo día.
 - Técnica aplicada:
