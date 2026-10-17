@@ -12,31 +12,44 @@
     <div class="card">
         <h2>Registro de Asistencia</h2>
 
-        <!-- Formulario que recoge los datos mínimos de la persona. -->
+        <!--
+            El formulario aplica restricciones básicas directamente en el navegador
+            para dar feedback inmediato. El servidor repite estas validaciones porque
+            las reglas HTML pueden omitirse al llamar directamente a la API.
+        -->
         <form id="attendanceForm">
             <div class="input-group">
                 <label for="nombre">Nombre</label>
-                <input type="text" id="nombre" required placeholder="Ej. Juan">
+                <!-- Unicode Letter acepta letras con tildes y ñ; el límite incluye espacios. -->
+                <input type="text" id="nombre" name="nombre" required minlength="2" maxlength="50"
+                    pattern="[\p{L} ]{2,50}" title="Usa solo letras y espacios (de 2 a 50 caracteres)."
+                    autocomplete="given-name" placeholder="Ej. Juan">
             </div>
             
             <div class="input-group">
                 <label for="apellido">Apellido</label>
-                <input type="text" id="apellido" required placeholder="Ej. Pérez">
+                <!-- Mantiene las mismas reglas que el campo Nombre. -->
+                <input type="text" id="apellido" name="apellido" required minlength="2" maxlength="50"
+                    pattern="[\p{L} ]{2,50}" title="Usa solo letras y espacios (de 2 a 50 caracteres)."
+                    autocomplete="family-name" placeholder="Ej. Pérez">
             </div>
 
             <div class="input-group">
                 <label for="dni">DNI</label>
-                <input type="number" id="dni" required placeholder="Ej. 12345678">
+                <!-- Texto, no number, para mantener ceros iniciales; inputmode abre teclado numérico. -->
+                <input type="text" id="dni" name="dni" required minlength="8" maxlength="8"
+                    pattern="[0-9]{8}" inputmode="numeric" title="El DNI debe contener exactamente 8 dígitos."
+                    autocomplete="off" placeholder="Ej. 12345678">
             </div>
 
-            <!-- Al enviarse, script.js intercepta el formulario y llama a la API. -->
+            <!-- script.js intercepta el envío, serializa los campos y llama a la API. -->
             <button type="submit">Marcar Presente</button>
         </form>
 
-            <!-- Aquí se muestran los mensajes de éxito o error del registro. -->
+            <!-- script.js escribe aquí los mensajes usando textContent, no como HTML. -->
             <div id="mensaje" class="mensaje"></div>
 
-            <!-- Controles para descargar todas las asistencias o solo las de hoy. -->
+            <!-- El checkbox filtra la exportación y el botón genera el archivo XLSX. -->
             <div class="export-group">
                 <label><input type="checkbox" id="soloHoy"> Solo la asistencia de hoy</label>
                 
@@ -44,7 +57,7 @@
             </div>
     </div>
 
-        <!-- SheetJS genera el archivo Excel directamente en el navegador. -->
+        <!-- SheetJS está disponible globalmente como XLSX para generar el archivo en el cliente. -->
         <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
         <!-- Lógica de envío del formulario y exportación de asistencias. -->
         <script src="script.js"></script>

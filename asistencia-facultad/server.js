@@ -4,13 +4,18 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import 'dotenv/config';
+import { validateAttendanceInput } from './validation.js';
 
 // Estas constantes permiten trabajar con rutas absolutas aunque el servidor se
 // inicie desde una carpeta diferente a la raíz del proyecto.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
+// El puerto puede configurarse en el entorno de despliegue; 3000 es el valor local.
 const PORT = process.env.PORT || 3000;
+
+// Prepara una única instancia del formateador para usar la zona horaria de
+// Argentina al construir fecha y hora con formato estable.
 const argentinaDateTimeFormatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Argentina/Buenos_Aires',
     year: 'numeric',
@@ -22,6 +27,7 @@ const argentinaDateTimeFormatter = new Intl.DateTimeFormat('en-CA', {
     hourCycle: 'h23'
 });
 
+// Separa la fecha y hora actuales en el formato que espera la base de datos.
 function getArgentinaDateTime() {
     const parts = Object.fromEntries(
         argentinaDateTimeFormatter.formatToParts(new Date()).map(({ type, value }) => [type, value])
@@ -54,6 +60,8 @@ app.use((req, res, next) => {
 // Crea la tabla si aún no existe y actualiza instalaciones antiguas agregando
 // las columnas necesarias para guardar la fecha y la hora por separado.
 async function initializeDatabase() {
+    // Define el esquema esperado para instalaciones nuevas; IF NOT EXISTS
+    // permite ejecutar la inicialización repetidamente sin recrear la tabla.
     await db.execute(`
         CREATE TABLE IF NOT EXISTS asistencias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,15 +80,18 @@ async function initializeDatabase() {
     const columnNames = new Set(schemaResult.rows.map((column) => column.name));
 
     if (!columnNames.has('fecha_hora')) {
+        // Compatibilidad con bases antiguas que todavía no tenían fecha y hora.
         await db.execute('ALTER TABLE asistencias ADD COLUMN fecha_hora TEXT');
         await db.execute("UPDATE asistencias SET fecha_hora = datetime('now', 'localtime') WHERE fecha_hora IS NULL");
     }
 
     if (!columnNames.has('fecha')) {
+        // La columna independiente permite filtrar y restringir por día.
         await db.execute('ALTER TABLE asistencias ADD COLUMN fecha TEXT');
     }
 
     if (!columnNames.has('hora')) {
+        // Conserva la hora separada para los clientes que la muestran por separado.
         await db.execute('ALTER TABLE asistencias ADD COLUMN hora TEXT');
     }
 
@@ -94,14 +105,14 @@ async function initializeDatabase() {
 // compatibilidad con clientes que usen /api/asistencia o /api/asistencias.
 app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
     try {
-        // Extraemos los datos enviados por el formulario y, opcionalmente, una
-        // fecha y hora proporcionadas por otro cliente de la API.
-        const { nombre, apellido, dni, fecha: fechaRecibida, hora: horaRecibida } = req.body;
-
-        // Sin estos tres datos no se puede crear un registro válido.
-        if (!nombre || !apellido || !dni) {
-            return res.status(400).json({ error: 'Todos los campos son obligatorios.' });
+        // El servidor vuelve a validar todos los datos: la validación del
+        // navegador puede omitirse enviando solicitudes directamente a la API.
+        const validation = validateAttendanceInput(req.body);
+        if (validation.error) {
+            return res.status(400).json({ error: validation.error });
         }
+        const { nombre, apellido, dni } = validation.data;
+        const { fecha: fechaRecibida, hora: horaRecibida } = req.body;
 
         // Se usa la zona horaria de Argentina, independientemente del servidor.
         const fechaHoraArgentina = getArgentinaDateTime();
@@ -118,6 +129,7 @@ app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
             args: [nombre, apellido, dni, `${fecha} ${hora}`, fecha, hora]
         });
 
+        // Devuelve el identificador generado para que el cliente confirme el registro.
         res.json({
             mensaje: 'Asistencia registrada con éxito',
             id: String(result.lastInsertRowid)
@@ -138,6 +150,7 @@ app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
 // Devuelve todas las asistencias ordenadas desde la más reciente a la antigua.
 app.get('/api/asistencias', async (req, res) => {
     try {
+        // No se aceptan fragmentos SQL del cliente: la consulta es fija y de solo lectura.
         const result = await db.execute('SELECT * FROM asistencias ORDER BY id DESC');
         res.json(result.rows);
     } catch (error) {
@@ -149,6 +162,7 @@ app.get('/api/asistencias', async (req, res) => {
 // Responde de forma clara cuando se solicita una ruta que empieza por /api,
 // pero no coincide con ninguno de los endpoints definidos arriba.
 app.use('/api', (req, res) => {
+    // Evita que las rutas API desconocidas terminen sirviendo el HTML de la aplicación.
     res.status(404).json({ error: 'Endpoint API no encontrado' });
 });
 
@@ -158,6 +172,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Para cualquier otra ruta GET de la aplicación se entrega la página principal
 // y el navegador se encarga de mostrar la interfaz.
 app.use((req, res, next) => {
+    // La página principal es el fallback para navegación web, no para endpoints API.
     if (req.method === 'GET' && !req.path.startsWith('/api')) {
         return res.sendFile(path.join(__dirname, 'public', 'index.html'));
     }
@@ -168,6 +183,7 @@ app.use((req, res, next) => {
 // la base de datos fue creada y migrada correctamente.
 initializeDatabase()
     .then(() => {
+        // Espera la creación/migración de la base antes de aceptar peticiones.
         app.listen(PORT, () => {
             console.log(`Servidor corriendo en http://localhost:${PORT}`);
         });

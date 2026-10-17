@@ -1,16 +1,18 @@
 // Intercepta el envío para registrar la asistencia mediante fetch sin recargar
 // la página completa.
 document.getElementById('attendanceForm').addEventListener('submit', async function (e) {
+    // Evita la navegación predeterminada para mostrar la respuesta sin recargar.
     e.preventDefault();
 
     // Leemos los campos y eliminamos espacios al principio y al final.
     const nombre = document.getElementById('nombre').value.trim();
     const apellido = document.getElementById('apellido').value.trim();
-    const dni = document.getElementById('dni').value.trim();
+    const dni = document.getElementById('dni').value;
     const mensajeDiv = document.getElementById('mensaje');
 
     try {
-        // Enviamos los datos en formato JSON al endpoint de la API.
+        // La API valida de nuevo estos valores; la validación del navegador no
+        // es una barrera de seguridad y puede ser evitada por un cliente externo.
         const respuesta = await fetch('/api/asistencia', {
             method: 'POST',
             headers: {
@@ -24,11 +26,13 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
 
         if (respuesta.ok) {
             // Una respuesta 2xx indica que el registro se guardó correctamente.
+            // textContent inserta texto plano y evita interpretar contenido como HTML.
             mensajeDiv.textContent = `¡Presente registrado correctamente!`;
             mensajeDiv.className = 'mensaje exito';
             document.getElementById('attendanceForm').reset();
         } else {
             // Para respuestas 4xx o 5xx mostramos el mensaje enviado por la API.
+            // Se usa textContent también para los mensajes recibidos del servidor.
             mensajeDiv.textContent = resultado.error || 'Ocurrió un error.';
             mensajeDiv.className = 'mensaje error';
         }
@@ -41,6 +45,7 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
 
 // Solicita al servidor la lista completa de asistencias.
 async function fetchAsistencias() {
+    // Lanza un error ante respuestas fallidas para que el flujo de exportación lo informe.
     const res = await fetch('/api/asistencias');
     if (!res.ok) throw new Error('Error al obtener asistencias');
     return res.json();
@@ -50,6 +55,7 @@ async function fetchAsistencias() {
 // JavaScript y comprueba si pertenece al día actual.
 function fechaEsHoy(fechaHoraStr) {
     if (!fechaHoraStr) return false;
+    // El formato de la base usa un espacio; Date interpreta el separador ISO "T".
     const iso = fechaHoraStr.replace(' ', 'T');
     const d = new Date(iso);
     const hoy = new Date();
@@ -79,7 +85,9 @@ function isRowToday(row) {
 
 // Convierte las filas recibidas en una hoja de cálculo y la descarga como XLSX.
 async function exportExcel(rows, filename = 'asistencias.xlsx') {
+    // Omite la columna combinada fecha_hora porque fecha y hora ya se exportan separadas.
     const rowsForExport = rows.map(({ fecha_hora, ...row }) => row);
+    // Convierte los objetos a hoja, la agrega a un libro y activa la descarga.
     const ws = XLSX.utils.json_to_sheet(rowsForExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Asistencias');
@@ -94,10 +102,10 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
         let rows = await fetchAsistencias();
         // El checkbox limita la exportación a las filas de la fecha actual.
         if (soloHoy) rows = rows.filter(r => isRowToday(r));
+        // Evita descargar una hoja vacía y elige un nombre que describa el filtro usado.
         if (rows.length === 0) return alert('No hay registros para exportar.');
         await exportExcel(rows, soloHoy ? 'asistencias_hoy.xlsx' : 'asistencias_todas.xlsx');
     } catch (e) {
         alert('Error al exportar: ' + e.message);
     }
 });
-
