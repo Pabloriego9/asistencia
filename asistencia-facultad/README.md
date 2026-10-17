@@ -2,7 +2,7 @@
 
 ## Cómo se organiza la aplicación
 
-- `server.js`: inicia Express, prepara/migra la tabla de Turso, publica los archivos de `public/` y define los endpoints de la API.
+- `server.js`: inicia Express, asegura las tablas `Alumnos` y `Asistencias` en Turso, publica los archivos de `public/` y define los endpoints de la API.
 - `validation.js`: concentra las reglas de validación del endpoint de registro.
 - `public/index.html`: define el formulario, sus restricciones de navegador y los controles para exportar.
 - `public/script.js`: envía el formulario a la API, muestra el resultado y prepara la exportación a Excel.
@@ -16,8 +16,9 @@
 2. `public/script.js` detiene la recarga y envía nombre, apellido y DNI como JSON a `POST /api/asistencia`.
 3. `server.js` pasa el cuerpo a `validateAttendanceInput`. Si hay errores, responde HTTP `400` y no intenta guardar nada.
 4. Si los datos son válidos, el servidor usa la fecha y hora de Argentina por defecto (o los valores opcionales `fecha` y `hora` recibidos por la API) y ejecuta una inserción con parámetros SQL.
-5. La base impide registros duplicados del mismo DNI para una fecha; el servidor responde con éxito o con un error HTTP apropiado.
-6. El navegador muestra el resultado como texto, sin interpretarlo como HTML.
+5. El servidor reutiliza o crea el alumno por DNI y agrega una asistencia relacionada mediante `alumno_id`, todo dentro de una transacción.
+6. La base impide registros duplicados del mismo alumno para una fecha; el servidor responde con éxito o con un error HTTP apropiado.
+7. El navegador muestra el resultado como texto, sin interpretarlo como HTML.
 
 ## Instalación y configuración
 
@@ -87,10 +88,14 @@ Notas:
 - La parametrización SQL protege las consultas; el escape HTML protege el contexto de renderizado. Son medidas diferentes y no se sustituyen entre sí.
 - No es necesario instalar una librería de sanitización adicional para este flujo. No se deben “limpiar” valores con reemplazos genéricos antes de guardarlos: valida su formato y aplica la protección adecuada en cada contexto.
 
-### Restricción de un registro por día
+### Modelo relacional y restricción de un registro por día
 
-- El índice único `idx_dni_fecha` en `(dni, fecha)` impide registrar el mismo DNI más de una vez en la misma fecha y la API responde HTTP `409` ante un duplicado.
-- Al iniciar, el servidor crea la tabla si hace falta, agrega columnas `fecha_hora`, `fecha` u `hora` ausentes y completa la fecha de registros antiguos a partir de `fecha_hora`.
+- `Alumnos` guarda `id`, `nombre`, `apellido` y `dni`; el DNI es único y permite localizar la ficha de una persona.
+- `Asistencias` guarda `id`, `alumno_id`, `fecha` y `hora`. `alumno_id` referencia `Alumnos.id`.
+- La restricción única `(alumno_id, fecha)` impide más de una asistencia diaria por alumno; la API responde HTTP `409` ante un duplicado.
+- `POST /api/asistencia` y su alias `POST /api/asistencias` no cambian. El backend ahora registra/reutiliza primero el alumno y luego crea la asistencia en las dos tablas dentro de una transacción.
+- `GET /api/asistencias` tampoco cambia. El backend hace un `JOIN` y devuelve los campos `id`, `alumno_id`, `nombre`, `apellido`, `dni`, `fecha` y `hora`, que permiten seguir usando la exportación.
+- Al iniciar, el servidor crea ambas tablas solo si no existen. Si ya las creaste, deben tener los nombres y columnas indicados arriba, además de las restricciones `UNIQUE(dni)` y `UNIQUE(alumno_id, fecha)`.
 
 ## Exportar asistencias
 

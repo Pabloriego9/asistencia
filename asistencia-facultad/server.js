@@ -57,48 +57,32 @@ app.use((req, res, next) => {
     next();
 });
 
-// Crea la tabla si aún no existe y actualiza instalaciones antiguas agregando
-// las columnas necesarias para guardar la fecha y la hora por separado.
+// Asegura que existan las dos tablas del modelo actual: los datos de cada
+// persona se guardan una sola vez en Alumnos y cada marca va en Asistencias.
 async function initializeDatabase() {
     // Define el esquema esperado para instalaciones nuevas; IF NOT EXISTS
     // permite ejecutar la inicialización repetidamente sin recrear la tabla.
     await db.execute(`
-        CREATE TABLE IF NOT EXISTS asistencias (
+        CREATE TABLE IF NOT EXISTS Alumnos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre TEXT NOT NULL,
             apellido TEXT NOT NULL,
-            dni TEXT NOT NULL,
-            fecha_hora DATETIME DEFAULT CURRENT_TIMESTAMP,
-            fecha TEXT,
-            hora TEXT
+            dni TEXT NOT NULL UNIQUE
         )
     `);
 
-    // Se consulta el esquema actual antes de aplicar migraciones para que el
-    // servidor pueda actualizar una base existente sin perder información.
-    const schemaResult = await db.execute('PRAGMA table_info(asistencias)');
-    const columnNames = new Set(schemaResult.rows.map((column) => column.name));
-
-    if (!columnNames.has('fecha_hora')) {
-        // Compatibilidad con bases antiguas que todavía no tenían fecha y hora.
-        await db.execute('ALTER TABLE asistencias ADD COLUMN fecha_hora TEXT');
-        await db.execute("UPDATE asistencias SET fecha_hora = datetime('now', 'localtime') WHERE fecha_hora IS NULL");
-    }
-
-    if (!columnNames.has('fecha')) {
-        // La columna independiente permite filtrar y restringir por día.
-        await db.execute('ALTER TABLE asistencias ADD COLUMN fecha TEXT');
-    }
-
-    if (!columnNames.has('hora')) {
-        // Conserva la hora separada para los clientes que la muestran por separado.
-        await db.execute('ALTER TABLE asistencias ADD COLUMN hora TEXT');
-    }
-
-    // Completa la fecha de registros antiguos y evita duplicados del mismo DNI
-    // durante un mismo día a nivel de base de datos.
-    await db.execute("UPDATE asistencias SET fecha = date(fecha_hora, 'localtime') WHERE fecha IS NULL");
-    await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_dni_fecha ON asistencias(dni, fecha)');
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS Asistencias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alumno_id INTEGER NOT NULL,
+            fecha TEXT NOT NULL,
+            hora TEXT NOT NULL,
+            CONSTRAINT fk_alumno
+                FOREIGN KEY (alumno_id) REFERENCES Alumnos(id),
+            CONSTRAINT uq_asistencia
+                UNIQUE (alumno_id, fecha)
+        )
+    `);
 }
 
 // Registra la asistencia de una persona. Se aceptan dos rutas para conservar
@@ -119,26 +103,60 @@ app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
         const fecha = fechaRecibida || fechaHoraArgentina.fecha;
         const hora = horaRecibida || fechaHoraArgentina.hora;
 
-        // Los signos ? y args separan los valores de la consulta SQL y ayudan
-        // a evitar inyecciones SQL.
-        const result = await db.execute({
-            sql: `
-                INSERT INTO asistencias (nombre, apellido, dni, fecha_hora, fecha, hora)
-                VALUES (?, ?, ?, ?, ?, ?)
-            `,
-            args: [nombre, apellido, dni, `${fecha} ${hora}`, fecha, hora]
-        });
+        // Las tres operaciones se ejecutan juntas para no dejar un alumno creado
+        // sin asistencia si el segundo INSERT falla. Los parámetros SQL evitan
+        // concatenar valores de usuario dentro de las consultas.
+        const transaction = await db.transaction('write');
+        let asistenciaId;
+        try {
+            // Si el DNI ya existe, reutiliza ese alumno; si no, crea su ficha.
+            await transaction.execute({
+                sql: `
+                    INSERT INTO Alumnos (nombre, apellido, dni)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(dni) DO NOTHING
+                `,
+                args: [nombre, apellido, dni]
+            });
+
+            const alumnoResult = await transaction.execute({
+                sql: 'SELECT id FROM Alumnos WHERE dni = ?',
+                args: [dni]
+            });
+            const alumnoId = alumnoResult.rows[0]?.id;
+            if (alumnoId === undefined) {
+                throw new Error('No se pudo encontrar el alumno después de guardarlo.');
+            }
+
+            const asistenciaResult = await transaction.execute({
+                sql: `
+                    INSERT INTO Asistencias (alumno_id, fecha, hora)
+                    VALUES (?, ?, ?)
+                `,
+                args: [alumnoId, fecha, hora]
+            });
+            asistenciaId = asistenciaResult.lastInsertRowid;
+
+            await transaction.commit();
+        } catch (error) {
+            try {
+                await transaction.rollback();
+            } catch (rollbackError) {
+                console.error('Error al revertir la transacción de asistencia:', rollbackError);
+            }
+            throw error;
+        }
 
         // Devuelve el identificador generado para que el cliente confirme el registro.
         res.json({
             mensaje: 'Asistencia registrada con éxito',
-            id: String(result.lastInsertRowid)
+            id: String(asistenciaId)
         });
     } catch (error) {
-        // Un índice único provoca este error cuando el DNI ya tiene asistencia
-        // registrada para la misma fecha.
-        console.error("Error en Turso:", error);
-        if (error.message?.toLowerCase().includes('unique')) {
+        // La restricción única de Asistencias produce este error si el alumno
+        // ya tiene una marca para la fecha solicitada.
+        const errorMessage = error instanceof Error ? error.message.toLowerCase() : '';
+        if (errorMessage.includes('unique')) {
             return res.status(409).json({ error: 'DNI ya registrado hoy.' });
         }
 
@@ -150,8 +168,21 @@ app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
 // Devuelve todas las asistencias ordenadas desde la más reciente a la antigua.
 app.get('/api/asistencias', async (req, res) => {
     try {
-        // No se aceptan fragmentos SQL del cliente: la consulta es fija y de solo lectura.
-        const result = await db.execute('SELECT * FROM asistencias ORDER BY id DESC');
+        // Une cada marca con el alumno para mantener el formato que consume el
+        // frontend y exportar nombres junto con la fecha y la hora.
+        const result = await db.execute(`
+            SELECT
+                Asistencias.id AS id,
+                Asistencias.alumno_id AS alumno_id,
+                Alumnos.nombre AS nombre,
+                Alumnos.apellido AS apellido,
+                Alumnos.dni AS dni,
+                Asistencias.fecha AS fecha,
+                Asistencias.hora AS hora
+            FROM Asistencias
+            INNER JOIN Alumnos ON Alumnos.id = Asistencias.alumno_id
+            ORDER BY Asistencias.id DESC
+        `);
         res.json(result.rows);
     } catch (error) {
         console.error('Error al obtener asistencias:', error);
@@ -180,7 +211,7 @@ app.use((req, res, next) => {
 });
 
 // La aplicación solo comienza a escuchar peticiones después de comprobar que
-// la base de datos fue creada y migrada correctamente.
+// las tablas requeridas existen o pudieron crearse correctamente.
 initializeDatabase()
     .then(() => {
         // Espera la creación/migración de la base antes de aceptar peticiones.
