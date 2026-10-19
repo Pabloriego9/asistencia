@@ -124,7 +124,7 @@ app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
                 args: [dni]
             });
             const alumnoId = alumnoResult.rows[0]?.id;
-            if (alumnoId === undefined) {
+            if (alumnoId === undefined || alumnoId === null) {
                 throw new Error('No se pudo encontrar el alumno después de guardarlo.');
             }
 
@@ -145,6 +145,8 @@ app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
                 console.error('Error al revertir la transacción de asistencia:', rollbackError);
             }
             throw error;
+        } finally {
+            transaction.close();
         }
 
         // Devuelve el identificador generado para que el cliente confirme el registro.
@@ -215,8 +217,8 @@ app.use((req, res, next) => {
 initializeDatabase()
     .then(() => {
         // Espera la creación/migración de la base antes de aceptar peticiones.
-        app.listen(PORT, () => {
-            console.log(`Servidor corriendo en http://localhost:${PORT}`);
+        const server = app.listen(PORT, () => {
+            console.log(`Servidor corriendo en http://localhost:${server.address().port}`);
         });
     })
     .catch((error) => {
