@@ -54,6 +54,29 @@ Ejecuta las pruebas de validación:
 npm test
 ```
 
+Además de las validaciones, las pruebas de API inician el servidor en un puerto
+libre y usan archivos SQLite temporales con el mismo cliente libSQL de la app.
+Comprueban el vínculo `alumno_id`, ambos endpoints de registro, duplicados HTTP
+409, la fecha argentina, los campos usados para exportar, la reversión de una
+inserción fallida y la conservación de registros previos. No usan credenciales
+ni modifican la base Turso de producción. GitHub Actions ejecuta estas pruebas
+en cada push y pull request.
+
+### Diagnóstico de `NOT NULL constraint failed: Asistencias.alumno_id`
+
+Este error indica que se intentó insertar una asistencia sin su alumno asociado.
+La API debe guardar o buscar primero el alumno por DNI y pasar su identificador
+al INSERT de `Asistencias`, dentro de la misma transacción. Esa secuencia está
+cubierta por las pruebas de integración. También se rechazan identificadores
+nulos antes del INSERT y se cierra la transacción al terminar.
+
+Antes de intervenir una instalación existente, consulta su esquema con
+`SELECT name, sql FROM sqlite_master WHERE type = 'table'` y verifica el commit
+activo en Render. `CREATE TABLE IF NOT EXISTS` no modifica tablas existentes.
+No ejecutes `DROP TABLE` ni recrees la base para resolver este error: perderías
+el historial. Una estructura distinta necesita una migración específica y un
+respaldo previo, conservando los datos originales.
+
 El comando comprueba que se acepten nombres con tildes y `ñ`, que el DNI conserve ceros iniciales y tenga exactamente 8 dígitos, que se rechacen entradas inválidas (incluidos intentos de XSS/SQLi en los campos de nombre) y que los nombres se recorten y normalicen.
 
 ## Probar la API
