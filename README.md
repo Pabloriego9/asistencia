@@ -71,6 +71,24 @@ curl.exe http://localhost:3000/api/asistencias
 Notas:
 - En PowerShell usa `curl.exe` o `Invoke-RestMethod` para evitar el alias `curl`.
 - El servidor necesita `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` para conectarse a Turso.
+- `GET /api/health` comprueba que el servidor desplegado puede conectarse a la base y que encuentra las columnas esperadas.
+
+## Conectar Render con la base correcta de Turso
+
+En Render, abre el servicio de la aplicación y ve a **Environment**. Configura estas variables con los valores de la misma base de datos que estás viendo en Turso:
+
+- `TURSO_DATABASE_URL`: copia la URL de conexión de Turso, con formato `libsql://...turso.io`.
+- `TURSO_AUTH_TOKEN`: crea o copia un token válido para esa misma base. Guárdalo como variable secreta; no lo pegues en el código, en el navegador ni en mensajes.
+
+Los nombres deben coincidir exactamente con los que lee `server.js`. Guarda los cambios y ejecuta un nuevo deploy en Render. En los logs de arranque aparecerá el host de Turso configurado (nunca el token); compáralo con el host de la URL de la base abierta en Turso.
+
+Después del deploy, abre `https://<tu-servicio>.onrender.com/api/health`. La respuesta esperada es:
+
+```json
+{"status":"ok","database":"connected","schema":"compatible"}
+```
+
+Si devuelve `database: "unavailable"`, comprueba la URL y el token en las variables de Render. Si devuelve `schema: "incompatible"`, ese servicio está consultando una base distinta o con tablas/columnas diferentes. La estructura de la captura es compatible con la aplicación y no necesita cambios. No vuelvas a ejecutar los comandos `DROP TABLE`: eliminan los datos existentes.
 
 ## Funciones y seguridad implementadas
 
@@ -96,6 +114,16 @@ Notas:
 - `POST /api/asistencia` y su alias `POST /api/asistencias` no cambian. El backend ahora registra/reutiliza primero el alumno y luego crea la asistencia en las dos tablas dentro de una transacción.
 - `GET /api/asistencias` tampoco cambia. El backend hace un `JOIN` y devuelve los campos `id`, `alumno_id`, `nombre`, `apellido`, `dni`, `fecha` y `hora`, que permiten seguir usando la exportación.
 - Al iniciar, el servidor crea ambas tablas solo si no existen. Si ya las creaste, deben tener los nombres y columnas indicados arriba, además de las restricciones `UNIQUE(dni)` y `UNIQUE(alumno_id, fecha)`.
+
+### Diagnóstico de error `NOT NULL constraint failed: Asistencias.alumno_id`
+
+Este error indica que el servidor no obtuvo un identificador válido de `Alumnos.id` antes de insertar la asistencia. En el editor SQL de Turso, ejecuta:
+
+```sql
+PRAGMA table_info('Alumnos');
+```
+
+La fila de `id` debe mostrar tipo `INTEGER` y `pk` igual a `1` (clave primaria autogenerada). `CREATE TABLE IF NOT EXISTS` no corrige una tabla existente con otra estructura; el servidor ahora informa explícitamente si detecta que `id` no cumple ese requisito. No elimines las tablas si contienen datos: primero respalda y migra las relaciones entre alumnos y asistencias.
 
 ## Exportar asistencias
 

@@ -83,6 +83,22 @@ async function initializeDatabase() {
                 UNIQUE (alumno_id, fecha)
         )
     `);
+
+    // CREATE TABLE IF NOT EXISTS no modifica una tabla que ya existía. Verifica
+    // que su columna id sea una clave primaria INTEGER autogenerada, porque
+    // Asistencias.alumno_id depende de ese valor para relacionar ambas tablas.
+    const alumnoSchema = await db.execute("PRAGMA table_info('Alumnos')");
+    const alumnoIdColumn = alumnoSchema.rows.find((column) => column.name === 'id');
+    if (
+        !alumnoIdColumn ||
+        String(alumnoIdColumn.type).toUpperCase() !== 'INTEGER' ||
+        Number(alumnoIdColumn.pk) !== 1
+    ) {
+        throw new Error(
+            'Esquema incompatible: Alumnos.id debe ser INTEGER PRIMARY KEY (autogenerada). ' +
+            'La tabla existente no se modifica automáticamente; corrige su esquema en Turso.'
+        );
+    }
 }
 
 // Registra la asistencia de una persona. Se aceptan dos rutas para conservar
@@ -96,12 +112,9 @@ app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
             return res.status(400).json({ error: validation.error });
         }
         const { nombre, apellido, dni } = validation.data;
-        const { fecha: fechaRecibida, hora: horaRecibida } = req.body;
-
-        // Se usa la zona horaria de Argentina, independientemente del servidor.
-        const fechaHoraArgentina = getArgentinaDateTime();
-        const fecha = fechaRecibida || fechaHoraArgentina.fecha;
-        const hora = horaRecibida || fechaHoraArgentina.hora;
+        // El registro siempre usa el reloj del servidor en Argentina. El cliente
+        // no puede cambiar el día para registrar otra asistencia o evitar el límite diario.
+        const { fecha, hora } = getArgentinaDateTime();
 
         // Las tres operaciones se ejecutan juntas para no dejar un alumno creado
         // sin asistencia si el segundo INSERT falla. Los parámetros SQL evitan
@@ -124,8 +137,11 @@ app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
                 args: [dni]
             });
             const alumnoId = alumnoResult.rows[0]?.id;
-            if (alumnoId === undefined) {
-                throw new Error('No se pudo encontrar el alumno después de guardarlo.');
+            if (alumnoId === undefined || alumnoId === null) {
+                throw new Error(
+                    'No se obtuvo un Alumnos.id válido para este DNI. ' +
+                    'Verifica que Alumnos.id sea INTEGER PRIMARY KEY AUTOINCREMENT.'
+                );
             }
 
             const asistenciaResult = await transaction.execute({
@@ -165,12 +181,59 @@ app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
     }
 });
 
+// Permite comprobar desde Render que la aplicación está conectada a la base
+// configurada y que esa base contiene las columnas usadas por este servidor.
+app.get('/api/health', async (req, res) => {
+    try {
+        await db.execute('SELECT 1');
+
+        const [alumnosSchema, asistenciasSchema] = await Promise.all([
+            db.execute("PRAGMA table_info('Alumnos')"),
+            db.execute("PRAGMA table_info('Asistencias')")
+        ]);
+        const alumnoId = alumnosSchema.rows.find((column) => column.name === 'id');
+        const asistenciaAlumnoId = asistenciasSchema.rows.find(
+            (column) => column.name === 'alumno_id'
+        );
+        const schemaIsCompatible = (
+            ['id', 'nombre', 'apellido', 'dni'].every((name) =>
+                alumnosSchema.rows.some((column) => column.name === name)
+            ) &&
+            ['id', 'alumno_id', 'fecha', 'hora'].every((name) =>
+                asistenciasSchema.rows.some((column) => column.name === name)
+            ) &&
+            String(alumnoId?.type).toUpperCase() === 'INTEGER' &&
+            Number(alumnoId?.pk) === 1 &&
+            String(asistenciaAlumnoId?.type).toUpperCase() === 'INTEGER'
+        );
+
+        if (!schemaIsCompatible) {
+            return res.status(503).json({
+                status: 'error',
+                database: 'connected',
+                schema: 'incompatible'
+            });
+        }
+
+        res.json({ status: 'ok', database: 'connected', schema: 'compatible' });
+    } catch (error) {
+        console.error('Error al comprobar la conexión con Turso:', error);
+        res.status(503).json({ status: 'error', database: 'unavailable' });
+    }
+});
+
 // Devuelve todas las asistencias ordenadas desde la más reciente a la antigua.
 app.get('/api/asistencias', async (req, res) => {
     try {
+        // El servidor determina "hoy" con el mismo reloj que usa al registrar.
+        // Sin filtro se conserva la consulta del historial completo.
+        const soloHoy = req.query.fecha === 'hoy';
+        if (req.query.fecha !== undefined && !soloHoy) {
+            return res.status(400).json({ error: 'Filtro de fecha no válido. Usa fecha=hoy.' });
+        }
         // Une cada marca con el alumno para mantener el formato que consume el
         // frontend y exportar nombres junto con la fecha y la hora.
-        const result = await db.execute(`
+        const result = await db.execute({ sql: `
             SELECT
                 Asistencias.id AS id,
                 Asistencias.alumno_id AS alumno_id,
@@ -181,8 +244,9 @@ app.get('/api/asistencias', async (req, res) => {
                 Asistencias.hora AS hora
             FROM Asistencias
             INNER JOIN Alumnos ON Alumnos.id = Asistencias.alumno_id
+            ${soloHoy ? 'WHERE Asistencias.fecha = ?' : ''}
             ORDER BY Asistencias.id DESC
-        `);
+        `, args: soloHoy ? [getArgentinaDateTime().fecha] : [] });
         res.json(result.rows);
     } catch (error) {
         console.error('Error al obtener asistencias:', error);
@@ -216,7 +280,9 @@ initializeDatabase()
     .then(() => {
         // Espera la creación/migración de la base antes de aceptar peticiones.
         app.listen(PORT, () => {
-            console.log(`Servidor corriendo en http://localhost:${PORT}`);
+            const databaseHost = new URL(process.env.TURSO_DATABASE_URL).hostname;
+            console.log(`Servidor corriendo en el puerto ${PORT}`);
+            console.log(`Base Turso configurada: ${databaseHost}`);
         });
     })
     .catch((error) => {

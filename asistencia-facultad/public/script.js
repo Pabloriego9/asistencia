@@ -43,46 +43,12 @@ document.getElementById('attendanceForm').addEventListener('submit', async funct
     }
 });
 
-// Solicita al servidor la lista completa de asistencias.
-async function fetchAsistencias() {
-    // Lanza un error ante respuestas fallidas para que el flujo de exportación lo informe.
-    const res = await fetch('/api/asistencias');
+// El servidor filtra por el día de Argentina usando el mismo reloj del registro.
+async function fetchAsistencias(soloHoy = false) {
+    const res = await fetch(soloHoy ? '/api/asistencias?fecha=hoy' : '/api/asistencias');
     if (!res.ok) throw new Error('Error al obtener asistencias');
     return res.json();
 }
-
-// Convierte una fecha almacenada como "YYYY-MM-DD HH:mm:ss" en una fecha de
-// JavaScript y comprueba si pertenece al día actual.
-function fechaEsHoy(fechaHoraStr) {
-    if (!fechaHoraStr) return false;
-    // El formato de la base usa un espacio; Date interpreta el separador ISO "T".
-    const iso = fechaHoraStr.replace(' ', 'T');
-    const d = new Date(iso);
-    const hoy = new Date();
-    return d.getFullYear() === hoy.getFullYear() && d.getMonth() === hoy.getMonth() && d.getDate() === hoy.getDate();
-}
-
-// Devuelve la fecha local actual en el formato que usa la base de datos.
-function hoyFechaISO() {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-}
-
-// Comprueba si una fila corresponde a hoy. Usa `fecha` si está disponible y, si
-// no, recurre a la columna fecha_hora para mantener compatibilidad.
-function isRowToday(row) {
-    if (!row) return false;
-    const today = hoyFechaISO();
-    if (row.fecha) return String(row.fecha) === today;
-    if (row.fecha_hora) {
-        return fechaEsHoy(row.fecha_hora);
-    }
-    return false;
-}
-
 // Convierte las filas recibidas en una hoja de cálculo y la descarga como XLSX.
 async function exportExcel(rows, filename = 'asistencias.xlsx') {
     // Omite la columna combinada fecha_hora porque fecha y hora ya se exportan separadas.
@@ -99,9 +65,7 @@ async function exportExcel(rows, filename = 'asistencias.xlsx') {
 document.getElementById('exportExcelBtn').addEventListener('click', async () => {
     const soloHoy = document.getElementById('soloHoy').checked;
     try {
-        let rows = await fetchAsistencias();
-        // El checkbox limita la exportación a las filas de la fecha actual.
-        if (soloHoy) rows = rows.filter(r => isRowToday(r));
+        const rows = await fetchAsistencias(soloHoy);
         // Evita descargar una hoja vacía y elige un nombre que describa el filtro usado.
         if (rows.length === 0) return alert('No hay registros para exportar.');
         await exportExcel(rows, soloHoy ? 'asistencias_hoy.xlsx' : 'asistencias_todas.xlsx');
@@ -109,3 +73,4 @@ document.getElementById('exportExcelBtn').addEventListener('click', async () => 
         alert('Error al exportar: ' + e.message);
     }
 });
+
