@@ -161,6 +161,8 @@ app.post(['/api/asistencia', '/api/asistencias'], async (req, res) => {
                 console.error('Error al revertir la transacción de asistencia:', rollbackError);
             }
             throw error;
+        } finally {
+            transaction.close();
         }
 
         // Devuelve el identificador generado para que el cliente confirme el registro.
@@ -279,9 +281,9 @@ app.use((req, res, next) => {
 initializeDatabase()
     .then(() => {
         // Espera la creación/migración de la base antes de aceptar peticiones.
-        app.listen(PORT, () => {
+        const server = app.listen(PORT, () => {
             const databaseHost = new URL(process.env.TURSO_DATABASE_URL).hostname;
-            console.log(`Servidor corriendo en el puerto ${PORT}`);
+            console.log(`Servidor corriendo en http://localhost:${server.address().port}`);
             console.log(`Base Turso configurada: ${databaseHost}`);
         });
     })
